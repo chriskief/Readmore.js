@@ -37,7 +37,7 @@
     delete(this.options.maxHeight);
 
     if(this.options.embedCSS && (! cssEmbedded[this.options.selector])) {
-      var styles = this.options.selector + ' .readmore-js-toggle, ' + this.options.selector + '.readmore-js-section{' + this.options.sectionCSS + '}' +
+      var styles = ' ' + this.options.selector + ' + .readmore-js-toggle, ' + this.options.selector + '.readmore-js-section{' + this.options.sectionCSS + '}' +
         this.options.selector + '.readmore-js-section{' +
           '-webkit-transition: height ' + this.options.speed + 'ms;' +
           '-moz-transition: height ' + this.options.speed + 'ms;' +
