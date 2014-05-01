@@ -11,48 +11,51 @@
       defaults = {
         speed: 100,
         maxHeight: 200,
+        heightMargin: 16,
         moreLink: '<a href="#">Read More</a>',
-        lessLink: '<a href="#">Close</a>'
-      };
+        lessLink: '<a href="#">Close</a>',
+        embedCSS: true,
+        sectionCSS: 'display: block; width: 100%;',
+        startOpen: false,
+        expandedClass: 'readmore-js-expanded',
+        collapsedClass: 'readmore-js-collapsed',
 
-  var stylesApplied = false;
+        // callbacks
+        beforeToggle: function(){},
+        afterToggle: function(){}
+      },
+      cssEmbedded = false;
 
   function Readmore( element, options ) {
     this.element = element;
 
-    this.options = $.extend( {}, defaults, options) ;
+    this.options = $.extend( {}, defaults, options);
+
+    $(this.element).data('max-height', this.options.maxHeight);
+    $(this.element).data('height-margin', this.options.heightMargin);
+
+    delete(this.options.maxHeight);
+
+    if(this.options.embedCSS && ! cssEmbedded) {
+      var styles = '.readmore-js-toggle, .readmore-js-section { ' + this.options.sectionCSS + ' -webkit-transition: height ' + this.options.speed + 'ms; -moz-transition: height ' + this.options.speed + 'ms; -ms-transition: height ' + this.options.speed + 'ms; -o-transition: height ' + this.options.speed + 'ms; transition: height ' + this.options.speed + 'ms; } .readmore-js-section { overflow: hidden; }';
+
+      (function(d,u) {
+        var css=d.createElement('style');
+        css.type = 'text/css';
+        if(css.styleSheet) {
+            css.styleSheet.cssText = u;
+        }
+        else {
+            css.appendChild(d.createTextNode(u));
+        }
+        d.getElementsByTagName('head')[0].appendChild(css);
+      }(document, styles));
+
+      cssEmbedded = true;
+    }
 
     this._defaults = defaults;
     this._name = readmore;
-
-    if (! stylesApplied) {
-      var styles = '.readmore-js-toggle, .readmore-js-section {\
-  display: block;\
-  width: 100%;\
-  -webkit-transition: height ' + this.options.speed + 'ms;\
-  -moz-transition: height ' + this.options.speed + 'ms;\
-  -ms-transition: height ' + this.options.speed + 'ms;\
-  -o-transition: height ' + this.options.speed + 'ms;\
-  transition: height ' + this.options.speed + 'ms;\
-}\
-.readmore-js-section {\
-  overflow: hidden;\
-}';
-
-      stylesApplied = true;
-
-      (function(d,u) {
-        if(d.createStyleSheet) {
-          d.createStyleSheet( u );
-        }
-        else {
-          var css=d.createElement('style');
-          css.appendChild(document.createTextNode(u));
-          d.getElementsByTagName("head")[0].appendChild(css);
-        }
-      }(document, styles));
-    }
-
 
     this.init();
   }
@@ -64,27 +67,33 @@
 
       $(this.element).each(function() {
         var current = $(this),
-            maxHeight = (current.css('max-height').replace(/[^-\d\.]/g, '') > $this.options.maxHeight) ? current.css('max-height').replace(/[^-\d\.]/g, '') : $this.options.maxHeight;
+            maxHeight = (current.css('max-height').replace(/[^-\d\.]/g, '') > current.data('max-height')) ? current.css('max-height').replace(/[^-\d\.]/g, '') : current.data('max-height'),
+            heightMargin = current.data('height-margin');
 
-        current.addClass('readmore-js-section');
-
-        if(current.css('max-height') != "none") {
-          current.css("max-height", "none");
+        if(current.css('max-height') != 'none') {
+          current.css('max-height', 'none');
         }
 
-        current.data("boxHeight", current.outerHeight(true));
+        $this.setBoxHeight(current);
 
-        if(current.outerHeight(true) < maxHeight) {
+        if(current.outerHeight(true) <= maxHeight + heightMargin) {
           // The block is shorter than the limit, so there's no need to truncate it.
           return true;
         }
         else {
-          current.after($($this.options.moreLink).on('click', function(event) { $this.toggleSlider(this, current, event) }).addClass('readmore-js-toggle'));
+          current.addClass('readmore-js-section ' + $this.options.collapsedClass).data('collapsedHeight', maxHeight);
+
+          var useLink = $this.options.startOpen ? $this.options.lessLink : $this.options.moreLink;
+          current.after($(useLink).on('click', function(event) { $this.toggleSlider(this, current, event) }).addClass('readmore-js-toggle'));
+
+          if(!$this.options.startOpen) {
+            current.css({height: maxHeight});
+          }
         }
+      });
 
-        sliderHeight = maxHeight;
-
-        current.css({height: sliderHeight});
+      $(window).on('resize', function(event) {
+        $this.resizeBoxes();
       });
     },
 
@@ -93,21 +102,71 @@
       event.preventDefault();
 
       var $this = this,
-          newHeight = newLink = '';
+          newHeight = newLink = sectionClass = '',
+          expanded = false,
+          collapsedHeight = $(element).data('collapsedHeight');
 
-      if ($(element).height() == sliderHeight) {
-        newHeight = $(element).data().boxHeight + "px";
+      if ($(element).height() <= collapsedHeight) {
+        newHeight = $(element).data('expandedHeight') + 'px';
         newLink = 'lessLink';
+        expanded = true;
+        sectionClass = $this.options.expandedClass;
       }
 
       else {
-        newHeight = sliderHeight;
+        newHeight = collapsedHeight;
         newLink = 'moreLink';
+        sectionClass = $this.options.collapsedClass;
       }
+
+      // Fire beforeToggle callback
+      $this.options.beforeToggle(trigger, element, expanded);
 
       $(element).css({"height": newHeight});
 
+      // Fire afterToggle callback
+      $(element).on('transitionend', function(e) {
+        $this.options.afterToggle(trigger, element, expanded);
+
+        $(this).removeClass($this.options.collapsedClass + ' ' + $this.options.expandedClass).addClass(sectionClass);
+      });
+
       $(trigger).replaceWith($($this.options[newLink]).on('click', function(event) { $this.toggleSlider(this, element, event) }).addClass('readmore-js-toggle'));
+    },
+
+    setBoxHeight: function(element) {
+      var el = element.clone().css({'height': 'auto', 'width': element.width(), 'overflow': 'hidden'}).insertAfter(element),
+          height = el.outerHeight(true);
+
+      el.remove();
+
+      element.data('expandedHeight', height);
+    },
+
+    resizeBoxes: function() {
+      var $this = this;
+
+      $('.readmore-js-section').each(function() {
+        var current = $(this);
+
+        $this.setBoxHeight(current);
+
+        if(current.height() > current.data('expandedHeight') || (current.hasClass($this.options.expandedClass) && current.height() < current.data('expandedHeight')) ) {
+          current.css('height', current.data('expandedHeight'));
+        }
+      });
+    },
+
+    destroy: function() {
+      var $this = this;
+
+      $(this.element).each(function() {
+        var current = $(this);
+
+        current.removeClass('readmore-js-section ' + $this.options.collapsedClass + ' ' + $this.options.expandedClass).css({'max-height': '', 'height': 'auto'}).next('.readmore-js-toggle').remove();
+
+        current.removeData();
+      });
     }
   };
 
@@ -115,9 +174,12 @@
     var args = arguments;
     if (options === undefined || typeof options === 'object') {
       return this.each(function () {
-        if (!$.data(this, 'plugin_' + readmore)) {
-          $.data(this, 'plugin_' + readmore, new Readmore( this, options ));
+        if ($.data(this, 'plugin_' + readmore)) {
+          var instance = $.data(this, 'plugin_' + readmore);
+          instance['destroy'].apply(instance);
         }
+
+        $.data(this, 'plugin_' + readmore, new Readmore( this, options ));
       });
     } else if (typeof options === 'string' && options[0] !== '_' && options !== 'init') {
       return this.each(function () {
